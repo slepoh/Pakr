@@ -39,6 +39,7 @@ function isSafeUrl(u) {
 }
 
 async function handleBuild(request, env) {
+  const ke = checkApiKey(request, env); if (ke) return ke;
   const { app_url, app_name, package_name, version_name, icon_url } = await request.json();
   const buildId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
   if (!app_url || !app_name || !package_name || !version_name)
@@ -303,6 +304,14 @@ async function extractApkFromZip(buf) {
   return null;
 }
 
+
+function checkApiKey(request, env) {
+  if (!env.API_KEY) return null;            // 未配置则保持开放（向后兼容旧网页 UI）
+  const k = request.headers.get('x-api-key') || request.headers.get('X-Api-Key');
+  if (k && k === env.API_KEY) return null;
+  return json({ error: 'Unauthorized: invalid or missing X-Api-Key' }, 401);
+}
+
 function gh(env, path, opts = {}) {
   return fetch(`https://api.github.com${path}`, {
     ...opts,
@@ -320,6 +329,7 @@ function gh(env, path, opts = {}) {
 function json(d, s = 200) { return new Response(JSON.stringify(d), { status: s, headers: { 'Content-Type': 'application/json' } }); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function handleCancel(request, env) {
+  const ke = checkApiKey(request, env); if (ke) return ke;
   const runId = new URL(request.url).searchParams.get('run_id');
   if (!runId) return json({ error: 'Missing run_id' }, 400);
   const r = await gh(env,
