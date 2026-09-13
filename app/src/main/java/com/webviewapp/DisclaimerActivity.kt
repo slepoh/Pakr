@@ -106,9 +106,9 @@ class DisclaimerActivity : AppCompatActivity() {
         // 一
         sb.appendBold("一、工具性质与适用范围")
         sb.append("\n\n")
-        sb.append("Pakr（以下简称\"Pakr\"）由个人开发者ZSFan独立开发并以开源方式发布，仅供")
+        sb.append("WorkApp（以下简称\"WorkApp\"）由WebToWork提供构建并分发，仅供")
         sb.appendBold("技术学习、研究及个人合法用途")
-        sb.append("使用，用于将合法网站快速封装为 Android 应用程序。Pakr本身不存储、不处理、不传输任何用户数据，不内置任何网页内容，所有页面内容均由使用者自行填入的目标网址决定。")
+        sb.append("使用，用于将合法网站快速封装为 Android 应用程序。WorkApp本身不存储、不处理、不传输任何用户数据，不内置任何网页内容，所有页面内容均由使用者自行填入的目标网址决定。")
         sb.append("\n\n")
 
         // 二
@@ -120,7 +120,7 @@ class DisclaimerActivity : AppCompatActivity() {
         // 三
         sb.appendBold("三、禁止用途（违者承担全部法律责任）")
         sb.append("\n\n")
-        sb.append("严禁将Pakr用于以下任何用途，违者将承担相应刑事、民事及行政法律责任：\n\n")
+        sb.append("严禁将WorkApp用于以下任何用途，违者将承担相应刑事、民事及行政法律责任：\n\n")
         val bans = listOf(
             "制作、分发仿冒、钓鱼、诈骗类应用程序",
             "冒充银行、证券、保险、支付机构或政府部门",
@@ -140,37 +140,37 @@ class DisclaimerActivity : AppCompatActivity() {
         sb.append("\n")
 
         // 四
-        sb.appendBold("四、开发者ZSFan责任豁免声明")
+        sb.appendBold("四、提供者WebToWork责任豁免声明")
         sb.append("\n\n")
-        sb.append("Pakr以\"现状\"提供，开发者ZSFan在法律允许的最大范围内明确声明：\n\n")
-        sb.append("1. Pakr仅提供技术封装能力，对使用者填入的网址内容、目标网站合法性及其产生的后果")
+        sb.append("WorkApp以\"现状\"提供，WebToWork在法律允许的最大范围内明确声明：\n\n")
+        sb.append("1. WorkApp仅提供技术封装能力，对使用者填入的网址内容、目标网站合法性及其产生的后果")
         sb.appendBold("不承担任何责任")
         sb.append("。\n\n")
-        sb.append("2. 使用者利用Pakr实施的一切行为所产生的")
+        sb.append("2. 使用者利用WorkApp实施的一切行为所产生的")
         sb.appendBold("全部法律后果由使用者独立承担")
-        sb.append("，与Pakr开发者ZSFan无关。\n\n")
-        sb.append("3. 开发者ZSFan不对Pakr的适用性、可靠性、安全性作出任何明示或默示担保，不对因使用Pakr产生的任何直接或间接损失承担赔偿责任。\n\n")
-        sb.append("4. 若第三方因使用者的违规行为向开发者ZSFan主张权利，使用者应自行承担全部责任并")
-        sb.appendBold("赔偿开发者ZSFan因此遭受的一切损失")
+        sb.append("，与WorkApp和WebToWork无关。\n\n")
+        sb.append("3. 分发者WebToWork不对WorkApp的适用性、可靠性、安全性作出任何明示或默示担保，不对因使用WorkApp产生的任何直接或间接损失承担赔偿责任。\n\n")
+        sb.append("4. 若第三方因使用者的违规行为向WebToWork主张权利，使用者应自行承担全部责任并")
+        sb.appendBold("赔偿WebToWork因此遭受的一切损失")
         sb.append("（包括但不限于诉讼费、律师费、赔偿金）。")
         sb.append("\n\n")
 
         // 五
         sb.appendBold("五、举报与配合执法")
         sb.append("\n\n")
-        sb.append("开发者ZSFan保留对滥用行为向相关部门举报的权利，并承诺积极配合公安、网信、市场监管等执法机构依法开展的调查取证工作。一经发现使用Pakr从事违法犯罪活动，开发者ZSFan将立即终止相关服务并配合执法。")
+        sb.append("WebToWork保留对滥用行为向相关部门举报的权利，并承诺积极配合公安、网信、市场监管等执法机构依法开展的调查取证工作。一经发现使用WorkApp从事违法犯罪活动，WebToWork将立即终止相关服务并配合执法。")
         sb.append("\n\n")
 
         // 六
         sb.appendBold("六、知识产权")
         sb.append("\n\n")
-        sb.append("Pakr源代码、界面设计及相关技术文档的知识产权归开发者ZSFan所有。使用者封装后的应用程序中所包含的第三方网站内容，其知识产权归原权利人所有，与Pakr开发者ZSFan无关。")
+        sb.append("Pakr源代码、界面设计及相关技术文档的知识产权归WebToWork所有。使用者封装后的应用程序中所包含的第三方网站内容，其知识产权归原权利人所有，与WebToWork无关。")
         sb.append("\n\n")
 
         // 七（警告框 - 橙色背景）
         val warnStart = sb.length
         sb.appendBold("七、警告：")
-        sb.append("网络空间不是法外之地。利用技术工具实施诈骗、侵权等违法行为，依据《中华人民共和国刑法》《网络安全法》《个人信息保护法》等法律法规，将面临刑事追诉、民事赔偿及行政处罚。请务必合法合规使用Pakr。")
+        sb.append("网络空间不是法外之地。利用技术工具实施诈骗、侵权等违法行为，依据《中华人民共和国刑法》《网络安全法》《个人信息保护法》等法律法规，将面临刑事追诉、民事赔偿及行政处罚。请务必合法合规使用WebToWork。")
         val warnEnd = sb.length
         sb.setSpan(ForegroundColorSpan(Color.parseColor("#92400E")), warnStart, warnEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         sb.setSpan(RelativeSizeSpan(0.93f), warnStart, warnEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
