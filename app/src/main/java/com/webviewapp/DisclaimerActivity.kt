@@ -114,7 +114,7 @@ class DisclaimerActivity : AppCompatActivity() {
         // 二
         sb.appendBold("二、使用者身份确认")
         sb.append("\n\n")
-        sb.append("使用Pakr即表示您确认：您已年满 18 周岁，具备完全民事行为能力；您将封装的网站属于您本人合法拥有或已获授权的网站；您已充分了解本声明全部内容并自愿受其约束。")
+        sb.append("使用WorkApp即表示您确认：您已年满 18 周岁，具备完全民事行为能力；您将封装的网站属于您本人合法拥有或已获授权的网站；您已充分了解本声明全部内容并自愿受其约束。")
         sb.append("\n\n")
 
         // 三
@@ -164,7 +164,7 @@ class DisclaimerActivity : AppCompatActivity() {
         // 六
         sb.appendBold("六、知识产权")
         sb.append("\n\n")
-        sb.append("Pakr源代码、界面设计及相关技术文档的知识产权归WebToWork所有。使用者封装后的应用程序中所包含的第三方网站内容，其知识产权归原权利人所有，与WebToWork无关。")
+        sb.append("WorkApp源代码、界面设计及相关技术文档的知识产权归WebToWork所有。使用者封装后的应用程序中所包含的第三方网站内容，其知识产权归原权利人所有，与WebToWork无关。")
         sb.append("\n\n")
 
         // 七（警告框 - 橙色背景）
