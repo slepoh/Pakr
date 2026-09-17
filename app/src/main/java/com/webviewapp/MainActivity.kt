@@ -88,11 +88,16 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         if (showStatusBar) {
-            // 显示手机状态栏：不隐藏系统栏，内容由 Insets 让出顶部安全区（见下方 inset 监听）
-            WindowCompat.setDecorFitsSystemWindows(window, false)
+            // STATUSFIT_V2：显示手机状态栏时把窗口交回系统「拟合系统栏」——
+            //   decorFitsSystemWindows = true 会由系统把内容区整体排在状态栏之下，
+            //   WebView 视口从状态栏下沿开始，网页因此真正跟随状态栏；
+            //   此前是 false（边到边）+ 给 WebView 加 padding，页面仍按整屏视口布局
+            //   （height:100vh / fixed inset:0 会铺满含状态栏的区域），看起来就是「网页还是全屏」。
+            WindowCompat.setDecorFitsSystemWindows(window, true)
             controller.show(WindowInsetsCompat.Type.statusBars())
-            // 浅底深字：webto.work 页面均为亮色主题
+            // 浅底深字：状态栏与导航栏图标均为深色（webto.work 页面都是亮色主题）
             controller.isAppearanceLightStatusBars = true
+            controller.isAppearanceLightNavigationBars = true
             window.statusBarColor = android.graphics.Color.WHITE
         } else {
             // 默认：全屏沉浸式（隐藏状态栏与导航栏）—— 与历史行为完全一致
@@ -343,11 +348,23 @@ class MainActivity : AppCompatActivity() {
             val imeInsets = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             val topInset = if (showStatusBar) bars.top else 0
+            // IME 兜底：decorFitsSystemWindows = true 时系统可能已消费 IME insets，
+            // 用「窗口可见区」反推被键盘遮住的高度；窗口被系统缩放（adjustResize）时结果自然为 0。
+            var imeBottom = imeInsets.bottom
+            if (imeBottom <= 0) {
+                val visible = android.graphics.Rect()
+                view.getWindowVisibleDisplayFrame(visible)
+                val covered = view.rootView.height - visible.bottom
+                if (covered > 0) imeBottom = covered
+            }
             val lp = view.layoutParams as android.widget.FrameLayout.LayoutParams
-            lp.bottomMargin = imeInsets.bottom
+            lp.bottomMargin = imeBottom
+            // STATUSFIT_V2：顶部让位由「整体下移容器」完成，不再给 WebView 加 padding ——
+            //   padding 不改变页面视口（页面里 100vh 仍按整屏算），容器下移才会真正压缩 WebView 视口。
+            //   decorFitsSystemWindows = true 时系统已让位，此处 bars.top 为 0（不会重复让位）；
+            //   若系统强制边到边（targetSdk 35 的 Android 15），bars.top 给出真实高度，这里兜底。
+            lp.topMargin = topInset
             view.layoutParams = lp
-            // WebView：顶部留出状态栏，底部由 marginBottom 控制
-            webView.setPadding(0, topInset, 0, 0)
             if (topInset > 0) {
                 // 进度条与左右边缘手势区同步下移：
                 // 否则它们会压在状态栏上，顶部左右各 20dp 的感应区会吞掉「下拉通知栏」手势

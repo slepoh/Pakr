@@ -40,6 +40,10 @@ on:
         description: Caller-supplied build id (echoed into run name for precise lookup)
         required: false
         default: ''
+# 发布 Release 资产需要写权限（仓库若把默认 GITHUB_TOKEN 设为只读，缺这段会 403）
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -343,3 +347,22 @@ jobs:
           path: ${{ env.SIGNED_DIR }}/*armeabi-v7a*.apk
           if-no-files-found: warn
           retention-days: 1
+
+      # RELEASE_PUBLISH: 把签名后的 APK 以 .apk 资产发布到 GitHub Release ——
+      #   artifact 永远是 zip 且需鉴权，客户端无法直链；Release 资产可保留 .apk 后缀、匿名可下，
+      #   平台据此改走直链下载（比 R2 中转快得多）。标签固定 apk-<run_id>，后端凭 run_id 反查。
+      - name: Publish APK to GitHub Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IN_BUILD_ID: ${{ github.event.inputs.build_id }}
+        run: |
+          set -e
+          TAG="apk-${GITHUB_RUN_ID}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --title "${APK_NAME:-apk} (${GITHUB_RUN_ID})" \
+            --notes "Automated APK build. build_id=${IN_BUILD_ID:-}" \
+            "${SIGNED_DIR}"/*.apk
+          echo "release-tag: $TAG"
+          gh release view "$TAG" --json assets -q '.assets[] | "release-asset: \(.name) \(.size)B \(.url)"'
