@@ -103,8 +103,10 @@ jobs:
               vc = 1
 
           replace_in_file('app/src/main/java/com/webviewapp/MainActivity.kt', {'{{APP_URL}}': app_url})
-          # PLACEHOLDER_PATCH: 构建期开关 -> Kotlin 常量（空串视为 false，兼容 GitHub 网页手动触发）
+          # SWITCH_PATCH: 构建期开关 -> Kotlin 常量（空串视为 false，兼容 GitHub 网页手动触发）
           replace_in_file('app/src/main/java/com/webviewapp/MainActivity.kt', {'{{NO_SCREENSHOT}}': 'true' if (os.environ.get('IN_NO_SCREENSHOT') or '').strip().lower() == 'true' else 'false', '{{SHOW_STATUSBAR}}': 'true' if (os.environ.get('IN_SHOW_STATUSBAR') or '').strip().lower() == 'true' else 'false'})
+          # SWITCH_LOG: 把开关落到构建日志里，便于线上核对本次 APK 的真实取值
+          print('switches: no_screenshot=%s show_statusbar=%s' % ((os.environ.get('IN_NO_SCREENSHOT') or '').strip().lower() == 'true', (os.environ.get('IN_SHOW_STATUSBAR') or '').strip().lower() == 'true'))
           replace_in_file('app/src/main/AndroidManifest.xml', {'{{APP_PACKAGE}}': pkg, '{{APP_NAME}}': app_name})
           replace_in_file('app/build.gradle', {'{{APP_PACKAGE}}': pkg, '{{VERSION_NAME}}': ver, '{{VERSION_CODE}}': str(vc)})
           replace_in_file('app/src/main/res/values/strings.xml', {'{{APP_NAME}}': app_name})
