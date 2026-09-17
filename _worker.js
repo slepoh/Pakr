@@ -40,7 +40,7 @@ function isSafeUrl(u) {
 
 async function handleBuild(request, env) {
   const ke = checkApiKey(request, env); if (ke) return ke;
-  const { app_url, app_name, package_name, version_name, icon_url, show_disclaimer, disclaimer_text } = await request.json();
+  const { app_url, app_name, package_name, version_name, icon_url, show_disclaimer, disclaimer_text, no_screenshot, show_statusbar } = await request.json();
   const buildId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
   if (!app_url || !app_name || !package_name || !version_name)
     return json({ error: 'Missing required fields' }, 400);
@@ -64,7 +64,7 @@ async function handleBuild(request, env) {
     `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/build.yml/dispatches`,
     { method: 'POST', body: JSON.stringify({
         ref: 'main',
-        inputs: { app_url, app_name, package_name, version_name, icon_url: icon_url || '', show_disclaimer: show_disclaimer === undefined ? 'true' : String(show_disclaimer), disclaimer_text: disclaimer_text || '' }
+        inputs: { app_url, app_name, package_name, version_name, icon_url: icon_url || '', show_disclaimer: show_disclaimer === undefined ? 'true' : String(show_disclaimer), disclaimer_text: disclaimer_text || '', no_screenshot: no_screenshot === undefined ? 'false' : String(no_screenshot), show_statusbar: show_statusbar === undefined ? 'false' : String(show_statusbar) }
     })}
   );
   if (r.status !== 204) return json({ error: 'Trigger failed', detail: await r.text() }, 500);

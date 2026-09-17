@@ -28,6 +28,14 @@ on:
         description: Custom disclaimer text (Markdown supported, replaces built-in)
         required: false
         default: ''
+      no_screenshot:
+        description: Disable screenshot & screen recording (FLAG_SECURE, true/false)
+        required: false
+        default: 'false'
+      show_statusbar:
+        description: Show the system status bar instead of fullscreen immersive (true/false)
+        required: false
+        default: 'false'
       build_id:
         description: Caller-supplied build id (echoed into run name for precise lookup)
         required: false
@@ -69,6 +77,8 @@ jobs:
           IN_VERSION_NAME: ${{ github.event.inputs.version_name }}
           IN_SHOW_DISCLAIMER: ${{ github.event.inputs.show_disclaimer }}
           IN_DISCLAIMER_TEXT: ${{ github.event.inputs.disclaimer_text }}
+          IN_NO_SCREENSHOT: ${{ github.event.inputs.no_screenshot }}
+          IN_SHOW_STATUSBAR: ${{ github.event.inputs.show_statusbar }}
         run: |
           python3 - <<'PY'
           import os
@@ -93,6 +103,8 @@ jobs:
               vc = 1
 
           replace_in_file('app/src/main/java/com/webviewapp/MainActivity.kt', {'{{APP_URL}}': app_url})
+          # PLACEHOLDER_PATCH: 构建期开关 -> Kotlin 常量（空串视为 false，兼容 GitHub 网页手动触发）
+          replace_in_file('app/src/main/java/com/webviewapp/MainActivity.kt', {'{{NO_SCREENSHOT}}': 'true' if (os.environ.get('IN_NO_SCREENSHOT') or '').strip().lower() == 'true' else 'false', '{{SHOW_STATUSBAR}}': 'true' if (os.environ.get('IN_SHOW_STATUSBAR') or '').strip().lower() == 'true' else 'false'})
           replace_in_file('app/src/main/AndroidManifest.xml', {'{{APP_PACKAGE}}': pkg, '{{APP_NAME}}': app_name})
           replace_in_file('app/build.gradle', {'{{APP_PACKAGE}}': pkg, '{{VERSION_NAME}}': ver, '{{VERSION_CODE}}': str(vc)})
           replace_in_file('app/src/main/res/values/strings.xml', {'{{APP_NAME}}': app_name})

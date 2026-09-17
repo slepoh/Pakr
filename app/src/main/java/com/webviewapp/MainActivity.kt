@@ -39,9 +39,26 @@ class MainActivity : AppCompatActivity() {
     private lateinit var overlay: View
     private lateinit var spinner: IOSSpinnerView
     private lateinit var loadingText: TextView
+    private lateinit var edgeLeft: View
+    private lateinit var edgeRight: View
 
     private val handler = Handler(Looper.getMainLooper())
     private var overlayVisible = false
+
+    /** 显示手机状态栏：构建期由 CI 注入 "true" / "false"（false = 默认全屏沉浸式） */
+    private val showStatusBar = ("{{SHOW_STATUSBAR}}" == "true")
+    /** 禁止截图 / 录屏：构建期由 CI 注入 "true" / "false"（FLAG_SECURE 由系统层拦截截屏、录屏与最近任务预览） */
+    private val noScreenshot = ("{{NO_SCREENSHOT}}" == "true")
+
+    /** WebView 自身滚动位置 */
+    @Volatile private var webViewScrollY = 0
+    /**
+     * 页面真实滚动位置（JS 桥上报，含内层滚动容器）。
+     * 为什么不能只看 WebView 自身 scrollY：页面若用 html,body{overflow:hidden} + 内层滚动容器，
+     * WebView 自身永远停在 0，SwipeRefreshLayout 的 canChildScrollUp() 会恒判「可下拉」，
+     * 于是用户想继续往上翻时被下拉刷新截胡（页面滚不动、反而触发刷新）。
+     */
+    @Volatile private var jsScrollTop = 0
 
     private val dotsFrames = arrayOf("", ".", "..", "...")
     private var dotsIndex = 0
@@ -69,18 +86,35 @@ class MainActivity : AppCompatActivity() {
             androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
         )
         super.onCreate(savedInstanceState)
-        @Suppress("DEPRECATION")
-        window.setFlags(
-            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
-            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
-            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        )
-        WindowCompat.setDecorFitsSystemWindows(window, false)
         val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (showStatusBar) {
+            // 显示手机状态栏：不隐藏系统栏，内容由 Insets 让出顶部安全区（见下方 inset 监听）
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            controller.show(WindowInsetsCompat.Type.statusBars())
+            // 浅底深字：webto.work 页面均为亮色主题
+            controller.isAppearanceLightStatusBars = true
+            window.statusBarColor = android.graphics.Color.WHITE
+        } else {
+            // 默认：全屏沉浸式（隐藏状态栏与导航栏）—— 与历史行为完全一致
+            @Suppress("DEPRECATION")
+            window.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            )
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        // 禁止截图 / 录屏：开启后系统层拒绝截屏（含最近任务预览）
+        if (noScreenshot) {
+            window.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                android.view.WindowManager.LayoutParams.FLAG_SECURE
+            )
+        }
         setContentView(R.layout.activity_main)
         webView     = findViewById(R.id.webView)
         progressBar = findViewById(R.id.progressBar)
@@ -88,6 +122,8 @@ class MainActivity : AppCompatActivity() {
         spinner     = findViewById(R.id.spinner)
         loadingText = findViewById(R.id.loadingText)
         swipeRefresh = findViewById(R.id.swipeRefresh)
+        edgeLeft    = findViewById(R.id.edgeLeft)
+        edgeRight   = findViewById(R.id.edgeRight)
         swipeRefresh.setColorSchemeColors(
             android.graphics.Color.parseColor("#6366F1")
         )
@@ -161,6 +197,8 @@ class MainActivity : AppCompatActivity() {
                 // 用 JS 检测页面真正渲染完成（两帧后），再隐藏 overlay
                 // 超时兜底：1200ms 强制隐藏
                 handler.postDelayed(delayHideRunnable, 1200)
+                // 页面加载完成即注入滚动上报（下拉刷新准入判定依赖它）
+                injectScrollReporter(view)
                 view.evaluateJavascript("""
                     (function(){
                         function done(){
@@ -299,14 +337,28 @@ class MainActivity : AppCompatActivity() {
                 try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
             }
         }
-        // 键盘弹出适配：全屏模式下 adjustResize 失效，手动监听 IME Insets 调整容器高度
+        // 键盘弹出适配：全屏模式下 adjustResize 失效，手动监听 IME Insets 调整容器高度；
+        // 状态栏模式下再用同一次回调让出顶部的状态栏高度，并把顶部元素一并下移。
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
             val imeInsets = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            val topInset = if (showStatusBar) bars.top else 0
             val lp = view.layoutParams as android.widget.FrameLayout.LayoutParams
             lp.bottomMargin = imeInsets.bottom
             view.layoutParams = lp
-            // WebView padding 清零，用 marginBottom 控制
-            webView.setPadding(0, 0, 0, 0)
+            // WebView：顶部留出状态栏，底部由 marginBottom 控制
+            webView.setPadding(0, topInset, 0, 0)
+            if (topInset > 0) {
+                // 进度条与左右边缘手势区同步下移：
+                // 否则它们会压在状态栏上，顶部左右各 20dp 的感应区会吞掉「下拉通知栏」手势
+                for (v in listOf(progressBar, edgeLeft, edgeRight)) {
+                    val vlp = v.layoutParams as? android.widget.FrameLayout.LayoutParams ?: continue
+                    if (vlp.topMargin != topInset) {
+                        vlp.topMargin = topInset
+                        v.layoutParams = vlp
+                    }
+                }
+            }
             insets
         }
 
@@ -328,44 +380,35 @@ class MainActivity : AppCompatActivity() {
                     hideOverlay()
                 }
             }
+
+            @JavascriptInterface
+            fun onScrollTop(top: Int) {
+                // 页面真实滚动位置（含内层滚动容器）—— 下拉刷新准入判定用它
+                jsScrollTop = if (top > 0) top else 0
+            }
         }, "_pakrBridge")
         // UA：移动版 Chrome（无 wv 标识），上传时临时切桌面UA
         webView.settings.userAgentString = MOBILE_UA
-        // 实时控制：WebView 不在顶部时禁用下拉刷新，防止滚动误触和打断 CF 验证
-        // 防误触：只有页面静止在顶部时才启用下拉刷新
-        var lastScrollY = 0
-        var isTouching = false
-        webView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            lastScrollY = scrollY
-            if (!isTouching) {
-                // 手指不在屏幕上时（fling 中），页面不在顶部就禁用
-                if (scrollY > 0) swipeRefresh.isEnabled = false
-            }
-        }
-        webView.setOnTouchListener { _, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    isTouching = true
-                    // 手指按下时根据当前位置决定是否启用
-                    swipeRefresh.isEnabled = (lastScrollY == 0)
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    // 滑动过程中不在顶部就立即禁用
-                    if (lastScrollY > 0) swipeRefresh.isEnabled = false
-                }
-                android.view.MotionEvent.ACTION_UP,
-                android.view.MotionEvent.ACTION_CANCEL -> {
-                    isTouching = false
-                    // 手指抬起后延迟 300ms 再判断（等 fling 惯性结束）
-                    swipeRefresh.isEnabled = false
-                    handler.postDelayed({
-                        swipeRefresh.isEnabled = (lastScrollY == 0)
-                    }, 300)
-                }
-            }
-            false
-        }
+        // 下拉刷新准入：交给 SwipeRefreshLayout 官方回调，每次准备拦截手势时都会问一次。
+        // 判定依据是「页面真实滚动位置」（JS 桥上报，含内层滚动容器）。
+        // 旧实现自己抖 isEnabled，且只看 WebView 自身 scrollY ——
+        // 内层滚动容器页面恒为 0，会把「想继续往上翻」当成下拉刷新。
+        swipeRefresh.isEnabled = true
+        swipeRefresh.setOnChildScrollUpCallback { _, _ -> canScrollUp() }
+        webView.setOnScrollChangeListener { _, _, scrollY, _, _ -> webViewScrollY = scrollY }
         webView.loadUrl(APP_URL)
+    }
+
+    /** 页面当前是否还能向上滚（WebView 自身或任意内层滚动容器不在顶部） */
+    private fun canScrollUp(): Boolean = webViewScrollY > 0 || jsScrollTop > 0
+
+    /**
+     * 注入「页面真实滚动位置」上报脚本。
+     * scroll 事件不冒泡，所以在 document 上用捕获阶段监听 —— 任意内层容器的滚动都能收到；
+     * 另开 250ms 兜底轮询，覆盖程序化滚动与滚动事件丢失的情况。
+     */
+    private fun injectScrollReporter(view: WebView) {
+        view.evaluateJavascript(SCROLL_REPORTER_JS, null)
     }
 
     private fun fetchThemeColor(view: WebView) {
@@ -407,8 +450,7 @@ class MainActivity : AppCompatActivity() {
     // 边缘滑动手势：左边缘右滑=后退，右边缘左滑=前进
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun setupEdgeSwipe() {
-        val edgeLeft  = findViewById<View>(R.id.edgeLeft)
-        val edgeRight = findViewById<View>(R.id.edgeRight)
+        // 引用改用成员字段（状态栏模式下 inset 监听里要调整 topMargin）
 
         fun makeGesture(onSwipeRight: (() -> Unit)? = null, onSwipeLeft: (() -> Unit)? = null)
             = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -570,6 +612,37 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val APP_URL   = "{{APP_URL}}"
+
+        /**
+         * 真实滚动位置上报脚本（页面每次加载完成注入一次）。
+         * 取「window 滚动」与「当前正在滚动的内层容器 scrollTop」的较大值。
+         */
+        private val SCROLL_REPORTER_JS = """
+            (function(){
+                if (window.__pakrScrollHooked) { try { window.__pakrScrollReport(); } catch(e){} return; }
+                window.__pakrScrollHooked = true;
+                var last = -1, el = null;
+                function winY(){
+                    var d = document.documentElement, b = document.body;
+                    return Math.max(window.pageYOffset || 0, (d && d.scrollTop) || 0, (b && b.scrollTop) || 0);
+                }
+                function report(){
+                    var y = winY();
+                    var s = (el && el.scrollTop) ? el.scrollTop : 0;
+                    var v = y > s ? y : s;
+                    if (v !== last) { last = v; try { window._pakrBridge.onScrollTop(v); } catch(e){} }
+                }
+                window.__pakrScrollReport = report;
+                document.addEventListener('scroll', function(e){
+                    var t = e.target;
+                    if (t && t.nodeType === 1 && t !== document && t !== document.documentElement && t !== document.body) { el = t; }
+                    report();
+                }, true);
+                document.addEventListener('touchmove', function(){ setTimeout(report, 0); }, true);
+                setInterval(report, 250);
+                report();
+            })();
+        """.trimIndent()
         const val MOBILE_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.165 Mobile Safari/537.36"
         const val DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         private const val FILE_CHOOSER_REQUEST = 1001
