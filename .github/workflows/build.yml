@@ -1,4 +1,5 @@
 name: Build APK
+run-name: Build ${{ github.event.inputs.build_id }}
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +18,18 @@ on:
         default: 1.0.0
       icon_url:
         description: Icon Image URL (optional, leave empty to use repo logo.jpg)
+        required: false
+        default: ''
+      show_disclaimer:
+        description: Show startup disclaimer on first launch (true/false)
+        required: false
+        default: 'true'
+      disclaimer_text:
+        description: Custom disclaimer text (Markdown supported, replaces built-in)
+        required: false
+        default: ''
+      build_id:
+        description: Caller-supplied build id (echoed into run name for precise lookup)
         required: false
         default: ''
 jobs:
@@ -50,6 +63,8 @@ jobs:
           IN_APP_NAME: ${{ github.event.inputs.app_name }}
           IN_PACKAGE_NAME: ${{ github.event.inputs.package_name }}
           IN_VERSION_NAME: ${{ github.event.inputs.version_name }}
+          IN_SHOW_DISCLAIMER: ${{ github.event.inputs.show_disclaimer }}
+          IN_DISCLAIMER_TEXT: ${{ github.event.inputs.disclaimer_text }}
         run: |
           python3 - <<'PY'
           import os
@@ -91,6 +106,139 @@ jobs:
           replace_in_file('app/src/main/res/layout/activity_main.xml', {'com.webviewapp': pkg})
 
           print(f"PKG_PATH is: {pkg_path}")
+
+          # ===== 启动声明页补丁：小窗口呈现 / 可隐藏 / 自定义文案（简易 Markdown） =====
+          # 由 webto.work 打包面板驱动：show_disclaimer=false 隐藏，disclaimer_text 非空则替换内置文案。
+          import re as _re
+
+          _show_disc = os.environ.get('IN_SHOW_DISCLAIMER', 'true').strip().lower() != 'false'
+          _disc_text = os.environ.get('IN_DISCLAIMER_TEXT', '') or ''
+
+          _kt_dir = os.path.join('app/src/main/java', pkg_path)
+          _dpath = os.path.join(_kt_dir, 'DisclaimerActivity.kt')
+          if os.path.exists(_dpath):
+              _src = open(_dpath, encoding='utf-8').read()
+
+              # 1) 去掉全屏标志 —— 小窗口（对话框）呈现的前提
+              _src = _re.sub(
+                  r'window\.setFlags\(\s*android\.view\.WindowManager\.LayoutParams\.FLAG_FULLSCREEN,\s*android\.view\.WindowManager\.LayoutParams\.FLAG_FULLSCREEN\s*\)',
+                  '// fullscreen flag removed: disclaimer renders as a centered dialog', _src)
+
+              _marker = 'setContentView(R.layout.activity_disclaimer)'
+
+              # 2) 隐藏：进入即视为已同意并直达主页，用户看不到声明页
+              if not _show_disc and 'SHOW_DISCLAIMER_ENABLED' not in _src:
+                  _src = _src.replace(_marker, '''// SHOW_DISCLAIMER_ENABLED=false（构建期注入）：首次启动不再展示声明页
+                  getSharedPreferences("app_prefs", MODE_PRIVATE).edit().putBoolean("disc_agreed", true).apply()
+                  startActivity(Intent(this, MainActivity::class.java).apply {
+                      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                  })
+                  finish()
+                  return
+          ''' + _marker, 1)
+
+              # 3) 小窗口：居中卡片 + 背景变暗 + 圆角白底（不再整屏遮挡）
+              if _marker in _src and 'DISCLAIMER_DIALOG_PATCH' not in _src:
+                  _src = _src.replace(_marker, _marker + '''
+                  // DISCLAIMER_DIALOG_PATCH
+                  try {
+                      val _dm = resources.displayMetrics
+                      window.setLayout((_dm.widthPixels * 0.92).toInt(), (_dm.heightPixels * 0.78).toInt())
+                      window.setGravity(android.view.Gravity.CENTER)
+                      window.setDimAmount(0.45f)
+                      val _bg = android.graphics.drawable.GradientDrawable()
+                      _bg.setColor(android.graphics.Color.WHITE)
+                      _bg.cornerRadius = 20f * _dm.density
+                      window.setBackgroundDrawable(_bg)
+                  } catch (e: Exception) { }''', 1)
+
+              # 4) 自定义文案：写入 assets，buildDisclaimerText 优先渲染它（支持 #/##/-/**粗体**）
+              if _disc_text.strip():
+                  os.makedirs('app/src/main/assets', exist_ok=True)
+                  open('app/src/main/assets/disclaimer.txt', 'w', encoding='utf-8').write(_disc_text)
+                  if 'readCustomDisclaimer' not in _src:
+                      _src = _src.replace(
+                          'private fun buildDisclaimerText(): SpannableStringBuilder {',
+                          '''private fun readCustomDisclaimer(): String? {
+                  return try {
+                      assets.open("disclaimer.txt").bufferedReader().use { it.readText() }.trim().ifEmpty { null }
+                  } catch (e: Exception) { null }
+              }
+
+              private fun appendBoldInline(outSb: SpannableStringBuilder, line: String) {
+                  var rest = line
+                  while (true) {
+                      val i = rest.indexOf("**")
+                      if (i < 0) { outSb.append(rest); outSb.append("\\n"); return }
+                      outSb.append(rest.substring(0, i))
+                      val j = rest.indexOf("**", i + 2)
+                      if (j < 0) { outSb.append(rest.substring(i + 2)); outSb.append("\\n"); return }
+                      val st = outSb.length
+                      outSb.append(rest.substring(i + 2, j))
+                      outSb.setSpan(StyleSpan(Typeface.BOLD), st, outSb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                      rest = rest.substring(j + 2)
+                  }
+              }
+
+              private fun renderMarkdown(srcText: String): SpannableStringBuilder {
+                  val outSb = SpannableStringBuilder()
+                  for (raw in srcText.replace("\\r\\n", "\\n").split("\\n")) {
+                      val line = raw.trimEnd()
+                      when {
+                          line.startsWith("# ") -> {
+                              val st = outSb.length
+                              outSb.append(line.removePrefix("# ").trim().replace("**", ""))
+                              outSb.setSpan(StyleSpan(Typeface.BOLD), st, outSb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                              outSb.setSpan(RelativeSizeSpan(1.22f), st, outSb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                              outSb.append("\\n\\n")
+                          }
+                          line.startsWith("## ") -> {
+                              val st = outSb.length
+                              outSb.append(line.removePrefix("## ").trim().replace("**", ""))
+                              outSb.setSpan(StyleSpan(Typeface.BOLD), st, outSb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                              outSb.setSpan(RelativeSizeSpan(1.1f), st, outSb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                              outSb.append("\\n\\n")
+                          }
+                          line.startsWith("- ") || line.startsWith("* ") -> {
+                              outSb.append("•  ")
+                              appendBoldInline(outSb, line.substring(2))
+                          }
+                          line.isBlank() -> outSb.append("\\n")
+                          else -> appendBoldInline(outSb, line)
+                      }
+                  }
+                  return outSb
+              }
+
+              private fun buildDisclaimerText(): SpannableStringBuilder {
+                  val custom = readCustomDisclaimer()
+                  if (custom != null) return renderMarkdown(custom)''', 1)
+
+              open(_dpath, 'w', encoding='utf-8').write(_src)
+              print('disclaimer patch: DisclaimerActivity.kt updated (show=%s, custom=%dB)' % (_show_disc, len(_disc_text)))
+
+          # 5) 对话框主题：新增样式文件并挂到 DisclaimerActivity（窗口化必需）
+          os.makedirs('app/src/main/res/values', exist_ok=True)
+          open('app/src/main/res/values/disclaimer_theme.xml', 'w', encoding='utf-8').write(
+              '<?xml version="1.0" encoding="utf-8"?>\n'
+              '<resources>\n'
+              '    <style name="DisclaimerDialogTheme" parent="Theme.AppCompat.Light.Dialog">\n'
+              '        <item name="android:windowNoTitle">true</item>\n'
+              '        <item name="android:windowBackground">@android:color/transparent</item>\n'
+              '        <item name="android:windowIsFloating">true</item>\n'
+              '        <item name="android:backgroundDimEnabled">true</item>\n'
+              '    </style>\n'
+              '</resources>\n')
+
+          _mpath = 'app/src/main/AndroidManifest.xml'
+          _manifest = open(_mpath, encoding='utf-8').read()
+          if 'DisclaimerDialogTheme' not in _manifest:
+              _manifest = _manifest.replace(
+                  'android:name=".DisclaimerActivity"',
+                  'android:name=".DisclaimerActivity"\n            android:theme="@style/DisclaimerDialogTheme"')
+              open(_mpath, 'w', encoding='utf-8').write(_manifest)
+              print('disclaimer patch: DisclaimerActivity themed as dialog')
+
           PY
 
       - name: Ensure fallback launcher resources
