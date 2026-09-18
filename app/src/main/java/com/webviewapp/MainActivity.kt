@@ -47,6 +47,8 @@ class MainActivity : AppCompatActivity() {
 
     /** 显示手机状态栏：构建期由 CI 注入 "true" / "false"（false = 默认全屏沉浸式） */
     private val showStatusBar = ("{{SHOW_STATUSBAR}}" == "true")
+    /** 下拉刷新手势：构建期由 CI 注入 "true" / "false"（false = 关闭下拉刷新） */
+    private val pullRefreshEnabled = ("{{PULL_REFRESH}}" == "true")
     /** 禁止截图 / 录屏：构建期由 CI 注入 "true" / "false"（FLAG_SECURE 由系统层拦截截屏、录屏与最近任务预览） */
     private val noScreenshot = ("{{NO_SCREENSHOT}}" == "true")
 
@@ -410,7 +412,9 @@ class MainActivity : AppCompatActivity() {
         // 判定依据是「页面真实滚动位置」（JS 桥上报，含内层滚动容器）。
         // 旧实现自己抖 isEnabled，且只看 WebView 自身 scrollY ——
         // 内层滚动容器页面恒为 0，会把「想继续往上翻」当成下拉刷新。
-        swipeRefresh.isEnabled = true
+        // 沉浸式模式下页面常用内层滚动容器，Webview 自身 scrollY 恒为 0，
+        // 「想往回翻看上面」会被误判成下拉刷新 —— 交由构建期开关决定是否保留该手势。
+        swipeRefresh.isEnabled = pullRefreshEnabled
         swipeRefresh.setOnChildScrollUpCallback { _, _ -> canScrollUp() }
         webView.setOnScrollChangeListener { _, _, scrollY, _, _ -> webViewScrollY = scrollY }
         webView.loadUrl(APP_URL)
